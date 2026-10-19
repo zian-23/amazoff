@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>$title | Amazoff</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Permanent+Marker&amp;display=swap">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body id="top">
+  <header class="topbar">
+    <a class="nav-box logo" href="/"><img src="/static/logo.svg" alt="amazoff" width="112" height="46"></a>
+    <div class="nav-box deliver">
+      <svg width="15" height="19" viewBox="0 0 16 20" aria-hidden="true"><path fill="#fff" d="M8 0a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 10a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"/></svg>
+      <span><small>Deliver to</small><b>Nowhere 000000</b></span>
+    </div>
+    <form class="search" action="/search" method="get" role="search">
+      $category_menu
+      <input type="search" name="q" value="$query" placeholder="Search Amazoff" aria-label="Search Amazoff" list="item-suggestions" autocomplete="off"$autofocus>
+      $swap_field
+      <datalist id="item-suggestions">$suggestions</datalist>
+      <button type="submit" aria-label="Search">
+        <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5" fill="none" stroke="#333" stroke-width="2.5"/><path d="M15 15l6 6" stroke="#333" stroke-width="2.5" stroke-linecap="round"/></svg>
+      </button>
+    </form>
+    <div class="nav-box"><small>Goodbye, stranger</small><b>Account &amp; Lists</b></div>
+    <div class="nav-box"><small>Orders</small><b>&amp; Returns</b></div>
+    <a class="nav-box cart-link" href="/cart">
+      <span class="cart-count">$cart_count</span>
+      <svg width="38" height="40" viewBox="0 -10 38 40" aria-hidden="true"><path d="M2 4h6l5 16h18l4-12H11" fill="none" stroke="#fff" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/><circle cx="15" cy="25.5" r="2.5" fill="#fff"/><circle cx="28" cy="25.5" r="2.5" fill="#fff"/></svg>
+      <b>Cart</b>
+    </a>
+  </header>
+  <nav class="subnav">
+    <a href="/">&#9776; All</a>
+    <a href="/search?list=deals">Yesterday's Deals</a>
+    <a href="/search?list=worst">Worst Sellers</a>
+    <a href="/search?delivery=today">Slowest Delivery</a>
+  </nav>
+
+  <main>
+$content
+  </main>
+
+  <footer>
+    <a class="back-to-top" href="#top">Back to bottom</a>
+    <div class="footer-main">
+      <p>Amazoff is a parody made for the STEAL//REMAKE hackathon. Inspired by <a href="https://www.amazon.com">amazon.com</a>. Not affiliated with or endorsed by Amazon.</p>
+      <p>Product data and photos: <a href="https://dummyjson.com">DummyJSON</a>, <a href="https://fakestoreapi.com">FakeStoreAPI</a> and <a href="https://openlibrary.org">Open Library</a> (books). Opposite words: <a href="https://www.datamuse.com/api/">Datamuse API</a>. Font: <a href="https://fonts.google.com/specimen/Permanent+Marker">Permanent Marker</a> (Apache 2.0).</p>
+    </div>
+  </footer>
+</body>
+</html>
