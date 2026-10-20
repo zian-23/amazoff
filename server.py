@@ -63,6 +63,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_html(pages.product_page(product, to_int(form.get("img"))))
             if path == "/cart":
                 return self.send_html(pages.cart_page())
+            if path == "/profile":
+                return self.send_html(pages.profile_page())
+            if path == "/offer":
+                if store.offer_active:
+                    return self.redirect("/checkout")
+                if not store.pity_offer_ready():
+                    return self.send_html(pages.message_page("No offers for you", "Not yet, anyway. Keep shopping."))
+                return self.send_html(pages.offer_page())
             if path == "/checkout":
                 if not store.cart:
                     return self.redirect("/cart")
@@ -89,17 +97,30 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/cart/add":
                 store.add_to_cart(to_int(form.get("id")), to_int(form.get("qty"), 1))
                 return self.redirect("/checkout" if form.get("action") == "buy" else "/cart")
+            if path == "/cart/prices":
+                store.set_prices({to_int(key.removeprefix("price_"), -1): to_int(value)
+                                  for key, value in form.items() if key.startswith("price_")})
+                return self.redirect("/cart")
             if path == "/cart/update":
                 store.set_quantity(to_int(form.get("id")), to_int(form.get("qty")))
                 return self.redirect("/cart")
             if path == "/checkout":
                 return self.checkout(form)
+            if path == "/profile/delete":
+                return self.send_html(pages.profile_page(deleted=True))
             if path == "/checkout/review":
                 if not store.cart:
                     return self.redirect("/cart")
                 if not store.checkout_details:
                     return self.redirect("/checkout")
+                if store.offer_active:
+                    return self.send_html(pages.betrayal_page(store.betray()))
                 return self.redirect(f"/order/{store.place_order()}")
+            if path == "/offer/claim":
+                if not store.pity_offer_ready():
+                    return self.redirect("/offer")
+                store.claim_offer()
+                return self.redirect("/checkout")
 
         self.send_html(pages.message_page("Page found!", "Just kidding. This page doesn't exist."), 404)
 

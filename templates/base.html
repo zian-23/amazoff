@@ -16,14 +16,13 @@
     </div>
     <form class="search" action="/search" method="get" role="search">
       $category_menu
-      <input type="search" name="q" value="$query" placeholder="Search Amazoff" aria-label="Search Amazoff" list="item-suggestions" autocomplete="off"$autofocus>
-      $swap_field
+      <input type="search" name="q" value="$query" placeholder="Search Amazoff" aria-label="Search Amazoff" list="item-suggestions" autocomplete="off">
       <datalist id="item-suggestions">$suggestions</datalist>
       <button type="submit" aria-label="Search">
         <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5" fill="none" stroke="#333" stroke-width="2.5"/><path d="M15 15l6 6" stroke="#333" stroke-width="2.5" stroke-linecap="round"/></svg>
       </button>
     </form>
-    <div class="nav-box"><small>Goodbye, stranger</small><b>Account &amp; Lists</b></div>
+    <a class="nav-box" href="/profile"><small>Goodbye, stranger</small><b>Account &amp; Lists</b></a>
     <div class="nav-box"><small>Orders</small><b>&amp; Returns</b></div>
     <a class="nav-box cart-link" href="/cart">
       <span class="cart-count">$cart_count</span>
@@ -45,9 +44,9 @@ $content
   <footer>
     <a class="back-to-top" href="#top">Back to bottom</a>
     <div class="footer-main">
-      <p>Amazoff is a parody made for the STEAL//REMAKE hackathon. Inspired by <a href="https://www.amazon.com">amazon.com</a>. Not affiliated with or endorsed by Amazon.</p>
-      <p>Product data and photos: <a href="https://dummyjson.com">DummyJSON</a>, <a href="https://fakestoreapi.com">FakeStoreAPI</a> and <a href="https://openlibrary.org">Open Library</a> (books). Opposite words: <a href="https://www.datamuse.com/api/">Datamuse API</a>. Font: <a href="https://fonts.google.com/specimen/Permanent+Marker">Permanent Marker</a> (Apache 2.0).</p>
+      <p>Amazoff is a parody. Inspired by <a href="https://www.amazon.com">amazon.com</a>.</p>
     </div>
   </footer>
+  $offer_button
 </body>
 </html>

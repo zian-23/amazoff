@@ -213,8 +213,6 @@ PAYMENTS = {
 
 # Checkout address field -> (label, example, pattern it must match or "").
 ADDRESS_FIELDS = {
-    "name": ("Full name", "Rahul Sharma", ""),
-    "phone": ("Mobile number", "10 digits", "[0-9]{10}"),
     "house": ("Flat, house no., building", "12B, Sunshine Apartments", ""),
     "area": ("Area, street, sector", "MG Road", ""),
     "city": ("Town/City", "Bengaluru", ""),
@@ -236,12 +234,81 @@ DETOURS = [
     "Chandni Chowk, in the year 1650",
 ]
 
+# Made-up reviews added to every product. The rating is what the reviewer meant; the page flips it.
+QUIRKY_REVIEWS = [
+    (5, "Haven't opened it yet. Five stars for the box."),
+    (1, "Arrived on time and works perfectly. Deeply suspicious."),
+    (5, "My cat sits in the box now. The {item} is in the cupboard."),
+    (4, "Does exactly what it says. Not sure what it says."),
+    (5, "Changed my life. My whole personality is {item} now. My family has stopped calling."),
+    (3, "My mom asked why I bought it. I still don't have an answer."),
+    (1, "Too good. Now I have nothing to complain about at dinner."),
+    (4, "Showed it to my neighbour. Sharma ji's son already has two."),
+    (2, "The manual was in Morse code. Took me three weeks to learn I'd been holding it upside down."),
+    (5, "Ordered one, received seven. Not complaining. Please don't tell anyone."),
+    (1, "Works so well it ruined my plan to return it."),
+    (3, "Came with free emotional damage. Good value overall."),
+    (5, "Wrote this review before buying. Feels right."),
+    (4, "My dog reviewed it first. He gave it a bark out of ten."),
+    (2, "Looks smaller in real life. So do I."),
+    (5, "Bought it at 3 AM. No regrets. Some regrets. Many regrets."),
+    (1, "The {item} is fine. The delivery guy judged me though."),
+    (4, "Gifted it to myself. I was very surprised."),
+]
+
+REVIEWERS = [
+    "Definitely Not A Bot", "Sharma ji's Son", "Karen from Accounts", "A Very Tired Dad",
+    "Anonymous Llama", "Your Future Self", "Rahul (not that one)", "Someone's Mom",
+    "Professional Overthinker", "Captain Return Policy", "3 AM Shopper", "The Delivery Guy",
+]
+
+REVIEW_BADGES = [
+    "Verified Non-Purchase", "Unverified Purchase (trust me)", "Top 0% Reviewer",
+    "Reviewed without opening", "Vine Voice (I am a plant)",
+]
+
+REVIEW_HELPFUL = [
+    "0 people found this helpful",
+    "1 person found this helpful (it was the reviewer)",
+    "12 people found this unhelpful",
+    "Nobody read this far",
+    "Your mom found this helpful",
+]
+
+# The "My profile" page: one very real shopper.
+PROFILE = {
+    "name": "Window Shopper Kumar",
+    "tagline": "Adds everything to cart. Buys nothing. Lives on hope.",
+    "member_since": "Tomorrow",
+    "plan": ("Amazoff Subprime", "Free delivery on nothing. Renews every 5 minutes. Cannot be cancelled."),
+    "details": [
+        ("Email", "definitely.real.person@nowhere.off"),
+        ("Phone", "Switched off since 2019"),
+        ("Address", "Wherever the parcel isn't"),
+        ("Birthday", "Every day (no gifts received)"),
+    ],
+    "settings": [  # (label, switched on, locked)
+        ("Email me every 4 minutes", True, True),
+        ("Show me things I can't afford", True, True),
+        ("Let me unsubscribe", False, True),
+        ("Respect my privacy", False, True),
+    ],
+}
+
+OFFER_DISCOUNT = 90  # percent off once Amazoff feels sorry for you
+ATTEMPTS_FOR_PITY = 2  # orders that never arrive before the pity offer shows up
+
 cart = {}  # product id -> quantity. One shopper on localhost, kept in memory.
+unbought = {}  # product id -> quantity, for every order that never arrived
+attempts = 0  # orders placed since the last betrayal
+offer_active = False  # True from claiming the pity offer until Amazoff backs out of it
+custom_prices = {}  # product id -> price per item the shopper set in the cart. One go per item.
+greedy = []  # (title, real price, price typed, price charged) for prices lowballed in the last "Set my prices"
+price_note_due = False  # True until the cart has shown the note for the last "Set my prices"
 checkout_details = {}  # "address" and "payment" from the checkout form, kept for the review step
 orders = {}
 
 _catalog = None
-_swap_candidates = None
 _antonyms = {}
 _books = {}  # product id -> book, for every book shown so far
 _book_searches = {}  # search text -> books
@@ -406,31 +473,6 @@ def item_titles():
         return []
 
 
-def _swappable():
-    """(product, categories its opposite lands in) for every product whose name has a curated opposite."""
-    global _swap_candidates
-    if _swap_candidates is None:
-        _swap_candidates = []
-        for p in catalog():
-            target = _curated_opposite(_words(p["title"]))
-            if target and search(target):
-                _swap_candidates.append((p, {r["category"] for r in search(target)}))
-    return _swap_candidates
-
-
-def swap_for(query, category=""):
-    """A real product name that has nothing to do with the query. Searching it gives a real opposite."""
-    query_words = _words(query)
-    intent = {p["category"] for p in search(query)}
-    candidates = [(p, lands_in) for p, lands_in in _swappable()
-                  if p["category"] not in intent and not any(_has_word(p, w) for w in query_words)]
-    if category in CATEGORIES:  # prefer swaps whose opposite is in the category we'll show
-        shown = CATEGORIES[category][1]
-        candidates = [c for c in candidates if shown in c[1]] or candidates
-    rng = random.Random(query.lower())
-    return rng.choice(candidates)[0]["title"].strip() if candidates else rng.choice(catalog())["title"].strip()
-
-
 def price_inr(product):
     return round(product["price"] * USD_TO_INR)
 
@@ -441,6 +483,23 @@ def delivery_days(product):
 
 def delivery_text(product):
     return DELIVERY_TEXT[delivery_days(product)]
+
+
+def reviews(product):
+    """The product's real reviews plus three made-up quirky ones, the same every time."""
+    if "_reviews" not in product:
+        rng = random.Random(f"reviews-{product['id']}")
+        item = product["title"].strip()
+        made_up = [{
+            "rating": rating,
+            "comment": comment.format(item=item),
+            "reviewerName": name,
+            "date": f"20{rng.randint(19, 25)}-{rng.randint(1, 12):02d}-{rng.randint(1, 28):02d}T00:00:00Z",
+        } for (rating, comment), name in zip(rng.sample(QUIRKY_REVIEWS, 3), rng.sample(REVIEWERS, 3))]
+        product["_reviews"] = [
+            {**review, "badge": rng.choice(REVIEW_BADGES), "helpful": rng.choice(REVIEW_HELPFUL)}
+            for review in product["reviews"] + made_up]
+    return product["_reviews"]
 
 
 def stock_text(product):
@@ -476,6 +535,8 @@ def add_to_cart(product_id, quantity=1):
 
 
 def set_quantity(product_id, quantity):
+    if product_id in custom_prices:  # an item is frozen once its price is set
+        return
     if quantity <= 0:
         cart.pop(product_id, None)
     elif product_id in cart:
@@ -495,8 +556,42 @@ def cart_count():
     return sum(cart.values())
 
 
+def cart_price(product):
+    return custom_prices.get(product["id"], price_inr(product))
+
+
 def cart_total(lines):
-    return sum(price_inr(product) * quantity for product, quantity in lines)
+    return sum(cart_price(product) * quantity for product, quantity in lines)
+
+
+def set_prices(typed):
+    """typed: product id -> price typed in the cart.
+
+    Type less than the real price and we multiply your amount by itself, again and again,
+    until it's higher than the real price. Greed never pays.
+    """
+    global price_note_due
+    greedy.clear()
+    for product, _ in cart_lines():
+        price = typed.get(product["id"], 0)
+        real = price_inr(product)
+        if price <= 0 or product["id"] in custom_prices:  # each item gets one go
+            continue
+        price_note_due = True
+        if price < real:
+            charged = max(price, 2)  # ₹1 times itself is still ₹1
+            while charged <= real:
+                charged *= charged
+            greedy.append((product["title"].strip(), real, price, charged))
+            price = charged
+        custom_prices[product["id"]] = price
+
+
+def reset_prices():
+    global price_note_due
+    custom_prices.clear()
+    greedy.clear()
+    price_note_due = False
 
 
 def captcha_error(says_human, says_robot):
@@ -533,12 +628,51 @@ def payment_text(payment, total):
     return chosen, paid_with
 
 
-def place_order():
+def pity_offer_ready():
+    return attempts >= ATTEMPTS_FOR_PITY and not offer_active
+
+
+def pity_discount(amount):
+    return round(amount * OFFER_DISCOUNT / 100) if offer_active else 0
+
+
+def unbought_lines():
+    return [(p, quantity) for p, quantity in ((get_product(i), q) for i, q in unbought.items()) if p]
+
+
+def claim_offer():
+    """Fill the cart with everything you never got, at the pity price."""
+    global offer_active
+    cart.clear()
+    cart.update(unbought)
+    reset_prices()
+    offer_active = True
+
+
+def betray():
+    """The pity offer was never real. Everything starts over. Returns what you almost bought."""
+    global attempts, offer_active
     lines = cart_lines()
+    cart.clear()
+    unbought.clear()
+    checkout_details.clear()
+    reset_prices()
+    attempts = 0
+    offer_active = False
+    return lines
+
+
+def place_order():
+    global attempts
+    lines = cart_lines()
+    for product, quantity in lines:
+        unbought[product["id"]] = max(unbought.get(product["id"], 0), quantity)
+    attempts += 1
     total = cart_total(lines)
     chosen, paid_with = payment_text(checkout_details["payment"], total)
     place = reroute(checkout_details["address"])
     order_id = f"404-{random.randint(0, 9999999):07d}-{random.randint(0, 9999999):07d}"
     orders[order_id] = {"lines": lines, "total": total, "chosen": chosen, "paid_with": paid_with, "place": place}
     cart.clear()
+    reset_prices()
     return order_id

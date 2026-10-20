@@ -49,8 +49,7 @@ def plural(count, word):
     return f"{count} {word}{'' if count == 1 else 's'}"
 
 
-def layout(title, content, query="", category="", swap="", focus=False):
-    """focus=True puts the cursor in the search bar, so pressing Enter searches what's in it."""
+def layout(title, content, query="", category=""):
     def category_link(key, name):
         css = ' class="active"' if key == category else ""
         return f'<a{css} href="{esc(search_url(category=key))}">{esc(name)}</a>'
@@ -65,10 +64,12 @@ def layout(title, content, query="", category="", swap="", focus=False):
     if category:  # so typing a search looks inside the chosen category
         category_menu += f'<input type="hidden" name="category" value="{esc(category)}">'
     suggestions = "".join(f'<option value="{esc(name)}">' for name in store.item_titles())
-    swap_field = f'<input type="hidden" name="swap" value="{esc(swap)}">' if swap else ""
+    # Floats around every page once two orders have gone nowhere. Opens only when clicked.
+    offer_button = ('<a class="pity-offer" href="/offer">🎁 Psst… Amazoff has something for you</a>'
+                    if store.pity_offer_ready() else "")
     return BASE.substitute(title=esc(title), query=esc(query), category_menu=category_menu,
-                           autofocus=" autofocus" if focus else "", swap_field=swap_field,
-                           suggestions=suggestions, cart_count=store.cart_count(), content=content)
+                           suggestions=suggestions, cart_count=store.cart_count(), content=content,
+                           offer_button=offer_button)
 
 
 # Search and home page
@@ -85,20 +86,16 @@ def results_page(params):
     category = params.get("category", "")
     current = {
         "q": query,
-        "swap": query,  # marks a search for the name we swapped in, so sorting and filters keep it
         "category": category if category in store.CATEGORIES else "",
         "list": params.get("list", "") if params.get("list", "") in store.LISTS else "",
         "sort": params.get("sort", ""),
         "rating": params.get("rating", ""),
         "delivery": params.get("delivery", ""),
     }
-    if query and query.lower() != params.get("swap", "").strip().lower():
-        return swap_page(query, current["category"])
 
     banner = ""
     notes = []  # sticky notes shown above the results
     if query:
-        notes.append("Your taste needs a 180° change. Don't worry, we turned it around for you. 🔄")
         shown, products = store.opposite_search(query)
         if shown:
             banner = (f'Showing results for <b class="red">{esc(shown)}</b>. Search instead for '
@@ -108,8 +105,13 @@ def results_page(params):
     else:
         products = store.catalog()
     witty = store.witty_message(current["sort"], current["rating"])
+    # A delivery day picked on top of both a price sort and a star filter clears the note.
+    hide_note = bool(current["delivery"] and current["rating"] in store.RATING_FILTERS
+                     and current["sort"] in ("price-asc", "price-desc"))
+    if hide_note:
+        witty = None
     if current["category"]:
-        if not witty:  # once you pick stars or a price sort, their note replaces the category's
+        if not witty and not hide_note:  # once you pick stars or a price sort, their note replaces the category's
             notes.append(store.CATEGORIES[current["category"]][2])
         shown_category = store.CATEGORIES[store.CATEGORIES[current["category"]][1]][0]
         in_category = store.category_products(products, current["category"])
@@ -146,19 +148,7 @@ def results_page(params):
   <section class="grid">{cards}</section>
 </div>"""
     title = query or store.LISTS.get(current["list"], "Shopping, but backwards")
-    return layout(title, content, query, current["category"], current["swap"])
-
-
-def swap_page(query, category):
-    """First Enter: no results, just a completely different product name typed into the search bar."""
-    swap = store.swap_for(query, category)
-    note = f'We fixed your search: "{query}" ➜ "{swap}". Press Enter. Trust the process. 🔮'
-    content = f"""
-<section class="swap-page">
-  <p class="witty">{esc(note)}</p>
-  <p class="muted big-text">☝️ Already typed into the search bar for you. Your original search has been lovingly ignored.</p>
-</section>"""
-    return layout(swap, content, swap, category, swap, focus=True)
+    return layout(title, content, query, current["category"])
 
 
 def sort_form(current):
@@ -192,7 +182,7 @@ def product_card(p):
 <div class="card">
   <a class="card-img" href="{url}"><img src="{esc(p['thumbnail'])}" alt="{esc(p['title'])}" loading="lazy"></a>
   <a class="card-title" href="{url}">{esc(p['title'])}</a>
-  <div>{p['rating']:.1f} {stars(p['rating'])} <span class="muted">({len(p['reviews'])})</span></div>
+  <div>{p['rating']:.1f} {stars(p['rating'])} <span class="muted">({len(store.reviews(p))})</span></div>
   {price_tag(store.price_inr(p))}
   <div class="small delivery">{esc(store.delivery_text(p))}</div>
   <form method="post" action="/cart/add">
@@ -218,7 +208,7 @@ def product_page(p, image_index):
     list_price = price / (1 + markup / 100)  # the "M.R.P." is lower than what you pay
     stock, stock_css = store.stock_text(p)
     quantities = "".join(f'<option value="{n}">{n}</option>' for n in range(1, 11))
-    reviews = "".join(review_html(r) for r in p["reviews"]) or '<p class="muted">No reviews yet. Be the last to write one.</p>'
+    reviews = "".join(review_html(r) for r in store.reviews(p))
 
     content = f"""
 <div class="product panel">
@@ -229,7 +219,7 @@ def product_page(p, image_index):
   <div class="info">
     <h1>{esc(p['title'])}</h1>
     <a href="/">Avoid the Amazoff Store</a>
-    <div>{p['rating']:.1f} {stars(p['rating'])} <span class="muted">{plural(len(p['reviews']), 'rating')}</span></div>
+    <div>{p['rating']:.1f} {stars(p['rating'])} <span class="muted">{plural(len(store.reviews(p)), 'rating')}</span></div>
     <hr>
     <div><span class="markup">+{markup:.0f}%</span>{price_tag(price, 'price big')}</div>
     <div class="muted small">M.R.P.: <s>{rupees(list_price)}</s></div>
@@ -269,9 +259,59 @@ def review_html(review):
   <div class="reviewer"><span class="avatar">{esc(name[:1])}</span>{esc(name)}</div>
   <div>{stars(flipped)} <b>{esc(review['comment'])}</b></div>
   <div class="small muted">Reviewed in Antarctica on {date.day} {date:%B %Y}</div>
-  <div class="small orange">Verified Non-Purchase</div>
-  <div class="small muted">0 people found this helpful</div>
+  <div class="small orange">{esc(review['badge'])}</div>
+  <div class="small muted">{esc(review['helpful'])}</div>
 </div>"""
+
+
+# Profile
+
+def profile_page(deleted=False):
+    me = store.PROFILE
+    plan, perks = me["plan"]
+    alert = ('<div class="alert"><b>Account deletion is out of stock.</b><br>'
+             'Please try again in 400 years.</div>') if deleted else ""
+    stats = [
+        (str(len(store.orders)), "Orders placed", "0 arrived"),
+        (str(store.cart_count()), "Items in cart", "for emotional support"),
+        ("1,284", "Carts abandoned", "a personal best"),
+        ("₹0", "Money saved", "spent it all on hope"),
+    ]
+    tiles = "".join(f'<div class="stat"><b>{esc(value)}</b><span>{esc(label)}</span>'
+                    f'<small class="muted">{esc(note)}</small></div>' for value, label, note in stats)
+    details = "".join(f"<dt>{esc(key)}</dt><dd>{esc(value)}</dd>" for key, value in me["details"])
+    settings = "".join(
+        f'<label class="option"><input type="checkbox"{" checked" if on else ""}{" disabled" if locked else ""}> '
+        f'{esc(label)}{" <small class=muted>(locked by Amazoff)</small>" if locked else ""}</label>'
+        for label, on, locked in me["settings"])
+
+    content = f"""
+{alert}
+<section class="panel profile-head">
+  <span class="avatar big">{esc(me['name'][:1])}</span>
+  <div>
+    <h1>{esc(me['name'])}</h1>
+    <p class="muted">{esc(me['tagline'])}</p>
+    <p class="small">Member since: <b>{esc(me['member_since'])}</b> &middot; Profile photo too expensive to load</p>
+  </div>
+</section>
+<div class="stats">{tiles}</div>
+<div class="two-col">
+  <div>
+    <section class="panel step">
+      <h2>Your details</h2>
+      <dl class="details">{details}</dl>
+    </section>
+  </div>
+  <aside class="panel side-box">
+    <h3>Membership</h3>
+    <p><b class="orange">{esc(plan)}</b><br><span class="small">{esc(perks)}</span></p>
+    <h3>Settings</h3>
+    {settings}
+    <form method="post" action="/profile/delete"><button class="btn btn-white" type="submit">Delete my account</button></form>
+  </aside>
+</div>"""
+    return layout("Your profile", content)
 
 
 # Cart, checkout and order
@@ -294,26 +334,57 @@ def cart_page():
 </section>"""
         return layout("Cart", content)
 
+    editable = [p for p, _ in lines if p["id"] not in store.custom_prices]
     items = ""
     for p, quantity in lines:
+        if p["id"] in store.custom_prices:  # its price is set for good, and so is its quantity
+            controls = f'<span class="small muted">Qty: {quantity}</span>'
+            real = store.price_inr(p)
+            price = store.cart_price(p)
+            was = f'<div class="small muted">Real price: <s>{rupees(real)}</s></div>' if price != real else ""
+            price_html = f"<div><b>{rupees(price)}</b>{was}</div>"
+        else:
+            controls = (f"{qty_button(p['id'], quantity - 1, '&minus;')}<span class=\"qty\">{quantity}</span>"
+                        f"{qty_button(p['id'], quantity + 1, '+')}{qty_button(p['id'], 0, 'Delete', 'link-btn')}")
+            # Inputs belong to the "Set my prices" form by id, since forms can't be nested.
+            price_html = (f'<label class="price-edit"><span class="small muted">Name your price</span>'
+                          f'<span>₹<input type="number" name="price_{p["id"]}" value="{store.price_inr(p)}" '
+                          f'min="1" step="1" form="price-form" required></span></label>')
         items += f"""
 <div class="cart-item">
   <a href="/product/{p['id']}"><img src="{esc(p['thumbnail'])}" alt="{esc(p['title'])}"></a>
   <div>
     <a class="cart-title" href="/product/{p['id']}">{esc(p['title'])}</a>
     <div class="green small">In stock</div>
-    <div class="qty-row">
-      {qty_button(p['id'], quantity - 1, '&minus;')}
-      <span class="qty">{quantity}</span>
-      {qty_button(p['id'], quantity + 1, '+')}
-      {qty_button(p['id'], 0, 'Delete', 'link-btn')}
-    </div>
+    <div class="qty-row">{controls}</div>
   </div>
-  <b>{rupees(store.price_inr(p))}</b>
+  {price_html}
 </div>"""
+
+    notes = ""
+    if editable:
+        notes += ('<div class="price-banner"><b>💸 You set the price! 💸</b>'
+                  '<span>Don\'t like our prices? Type your own below. For real. One shot per item.</span></div>')
+    # The verdict on your prices shows once, right after "Set my prices", for the items just priced.
+    if store.price_note_due and store.greedy:
+        changes = "".join(
+            f"<li><b>{esc(title)}</b>: original price {rupees(real)}, you typed {rupees(typed)}, "
+            f'now you pay <b class="red">{rupees(charged)}</b></li>'
+            for title, real, typed, charged in store.greedy)
+        notes += (f'<p class="witty">So greedy! 🤑 You tried to pay less than the real price, '
+                  f'so we multiplied your amount by the amount itself. Enjoy your new price.</p>'
+                  f'<ul class="greedy">{changes}</ul>')
+    elif store.price_note_due:
+        notes += '<p class="witty">An honest customer? Suspicious. Prices locked in anyway. 🔒</p>'
+    store.price_note_due = False
+    set_prices = "" if not editable else (
+        '<form id="price-form" method="post" action="/cart/prices">'
+        '<button class="btn btn-white" type="submit">Set my prices</button></form>'
+        '<p class="small muted">Don\'t like our prices? Type your own. One go per item.</p>')
 
     subtotal = f"Subtotal ({plural(store.cart_count(), 'item')}): <b>{rupees(store.cart_total(lines))}</b>"
     content = f"""
+{notes}
 <div class="two-col">
   <section class="panel">
     <h1>Shopping Cart</h1>
@@ -323,18 +394,24 @@ def cart_page():
   <aside class="panel side-box">
     <p class="subtotal-side">{subtotal}</p>
     <a class="btn btn-yellow" href="/checkout">Proceed to Buy</a>
+    <a class="btn btn-white" href="/">Continue to search items</a>
+    {set_prices}
   </aside>
 </div>"""
     return layout("Cart", content)
 
 
 def order_summary(total):
+    discount = store.pity_discount(total)
+    pity = (f'<div class="summary-row green"><span>Pity discount ({store.OFFER_DISCOUNT}% off):</span>'
+            f'<span>{rupees(-discount)}</span></div>') if discount else ""
     return f"""
     <h3>Order Summary</h3>
     <div class="summary-row"><span>Items:</span><span>{rupees(total)}</span></div>
+    {pity}
     <div class="summary-row"><span>Delivery:</span><span>Free (it isn't coming)</span></div>
     <hr>
-    <div class="summary-row total"><span>Order Total:</span><span>{rupees(total)}</span></div>"""
+    <div class="summary-row total"><span>Order Total:</span><span>{rupees(total - discount)}</span></div>"""
 
 
 def checkout_page(error="", address=None, payment=""):
@@ -359,7 +436,7 @@ def checkout_page(error="", address=None, payment=""):
   <div>
     {alert}
     <section class="panel step">
-      <h2>1. Delivery address</h2>
+      <h2>1. Delivery address <span class="hint">Type carefully. Our delivery partners are famously creative with directions. 🧭</span></h2>
       <div class="address-form">{fields}</div>
     </section>
     <section class="panel step">
@@ -393,7 +470,7 @@ def review_page():
     address = store.checkout_details["address"]
     place = store.reroute(address)
     chosen, paid_with = store.payment_text(store.checkout_details["payment"], total)
-    full_address = (f"{address['name']}, {address['house']}, {address['area']}, "
+    full_address = (f"{address['house']}, {address['area']}, "
                     f"{address['city']}, {address['state']} {address['pin']}")
     items = "".join(f"<li>{esc(p['title'])} &times; {quantity}</li>" for p, quantity in lines)
 
@@ -440,6 +517,47 @@ def order_page(order_id, order):
   <a class="btn btn-yellow btn-small" href="/">Continue not shopping</a>
 </section>"""
     return layout("Order placed", content)
+
+
+# Pity offer and betrayal
+
+def offer_page():
+    lines = store.unbought_lines()
+    total = sum(store.price_inr(p) * quantity for p, quantity in lines)
+    offer_total = total - round(total * store.OFFER_DISCOUNT / 100)
+    items = "".join(
+        f'<li><img src="{esc(p["thumbnail"])}" alt=""> {esc(p["title"])} &times; {quantity} '
+        f'<s class="muted">{rupees(store.price_inr(p) * quantity)}</s></li>'
+        for p, quantity in lines)
+    content = f"""
+<section class="panel offer">
+  <h1>Okay. Even we feel bad now. 🥺</h1>
+  <p class="big-text">You tried to buy these {plural(store.attempts, 'time')} and got absolutely nothing.
+    So here's <b class="red">{store.OFFER_DISCOUNT}% off</b> everything you tried to buy.</p>
+  <ul class="order-items">{items}</ul>
+  <p class="big-text">Was <s>{rupees(total)}</s>, now just <b class="red">{rupees(offer_total)}</b></p>
+  <form method="post" action="/offer/claim">
+    <button class="btn btn-orange btn-offer" type="submit">Claim my pity discount</button>
+  </form>
+  <p class="small muted">No catch. Pinky promise. 🤞</p>
+</section>"""
+    return layout("A special offer, just for you", content)
+
+
+def betrayal_page(lines):
+    items = "".join(f"<li>{esc(p['title'])} &times; {quantity}</li>" for p, quantity in lines)
+    content = f"""
+<section class="panel betrayal">
+  <h1 class="red">Sorry, we cannot place this order for you.</h1>
+  <p class="big-text">This is Amazoff. Did you really think we'd let you buy something? 🙃</p>
+  <p>The pity was real. The discount was not. Your items have been returned to the shelf, then the warehouse,
+    and finally the void:</p>
+  <ul>{items}</ul>
+  <p class="witty">Thank you for not shopping with us. 👋</p>
+  <a class="btn btn-yellow btn-small" href="/">Start over (you never learn)</a>
+  <div class="big-logo"><img src="/static/logo.svg" alt="amazoff" width="448" height="184"></div>
+</section>"""
+    return layout("Order cancelled", content)
 
 
 def message_page(title, message):
